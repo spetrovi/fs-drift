@@ -138,11 +138,14 @@ start_time = time.time()
 event_count = 0
 
 while True:
-    # if there is pause file present, do nothing
+    # if there is pause file present, do jump out of working directory
 
     if os.path.isfile(opts.pause_file):
-        time.sleep(5)
+        if os.getcwd() != '/var/tmp':
+            os.chdir('/var/tmp')
         continue
+    elif os.getcwd() == '/var/tmp':
+        os.chdir(opts.top_directory)
 
     # every 1000 events, check for "stop file" that indicates test should end
 
