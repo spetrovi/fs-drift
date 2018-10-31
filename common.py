@@ -26,6 +26,8 @@ class file_access_dist:
     UNIFORM = 2
     GAUSSIAN = 3
 
+global fsdrift_directory
+fsdrift_directory = os.getcwd()
 
 # bit mask that allows selective enabling of debug messages
 verbosity = 0

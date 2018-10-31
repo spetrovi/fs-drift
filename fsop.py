@@ -75,7 +75,6 @@ SIMULATED_TIME_UNDEFINED = None
 simulated_time = SIMULATED_TIME_UNDEFINED  # initialized later
 time_save_rate = 5
 
-
 def init_buf():
     global buf
     buf = random_buffer.gen_buffer(opts.max_record_size_kb*BYTES_PER_KB)

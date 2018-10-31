@@ -36,6 +36,7 @@ def usage(msg):
     print('-+v|--mean-velocity')
     print('-+d|--gaussian-stddev')
     print('-+c|--create_stddevs-ahead')
+    print('-c|--compression_ratio')
     print('-p|--pause_file')
     sys.exit(NOTOK)
 
@@ -71,6 +72,7 @@ gaussian_stddev = 1000.0  # just a guess, means most of accesses within 1000 fil
 create_stddevs_ahead = 3.0
 drift_time = -1
 pause_file = '/var/tmp/pause'
+compression_ratio = 0.0
 
 
 def parseopts():
@@ -79,6 +81,7 @@ def parseopts():
     global fsync_probability_pct, fdatasync_probability_pct, workload_table_filename
     global stats_report_interval, levels, dirs_per_level
     global rand_distr_type, rand_distr_type_str, mean_index_velocity, gaussian_stddev, create_stddevs_ahead
+    global compression_ratio
     if len(sys.argv) % 2 != 1:
         usage('all options must have a value')
     try:
@@ -146,6 +149,8 @@ def parseopts():
                 gaussian_stddev = float(val)
             elif nm == '--create_stddevs-ahead' or nm == '-+c':
                 create_stddevs_ahead = float(val)
+            elif nm == '--compression-ratio' or nm == '-c':
+                compression_ratio = float(val)                
             elif nm == '--pause_file' or nm == '-p':
                 pause_file = val
             else:
@@ -175,12 +180,13 @@ def parseopts():
         '%11s%9.1f = create stddevs ahead\n'
         '%20s = save response times\n'
         '%20s = save bandwidth\n'
+        '%11s%9.1f = compression ratio\n'
         % (top_directory, str(starting_gun_file), '', opcount, '', duration, '', max_files, '', max_file_size_kb,
            '', max_record_size_kb, '', fix_record_size_kb, '', max_random_reads, '', max_random_writes, '', singleIO,
            '', fdatasync_probability_pct, '', fsync_probability_pct,
            '', levels, '', dirs_per_level,
            rand_distr_type_str, '', mean_index_velocity, '', gaussian_stddev, '', create_stddevs_ahead,
-           str(rsptimes), str(bw))))
+           str(rsptimes), str(bw), '', compression_ratio)))
     if workload_table_filename != None:
         print('%20s = workload table filename' % workload_table_filename)
     if stats_report_interval > 0:
