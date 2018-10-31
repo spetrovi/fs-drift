@@ -115,7 +115,7 @@ For gaussian filename distribution, this parameter controls with width of the be
 
 This parameter is for cache tiering testing.  It allows creates to "lead" all other operations, so that we can create a high probability that read files will be in the set of "hot files".  Otherwise, most read accesses with non-uniform filename distribution will result  in "file not found" errors. (default 3.0)
 
--c|--compression-ration
+-c|--compression-ratio
 
 If set, lzdatagen will be used to fill IO buffer with compressible data. Set number is a compress ratio (-r parameter in lzdatagen). E.g. 4.0 is 1/4.0, therefore 75%. For more info see lzdatagen manual. (default 0.0)
 
