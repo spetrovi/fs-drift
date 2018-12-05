@@ -11,7 +11,7 @@ import random
 import event
 import fsop
 import common
-from common import rq, OK, NOTOK, BYTES_PER_KB
+from common import rq, OK, NOTOK, BYTES_PER_KB, fsdrift_directory
 import opts
 import errno
 import subprocess
@@ -102,7 +102,7 @@ opts.parseopts()
 event.parse_weights()
 event.normalize_weights()
 total_errors = 0
-fsop.init_buf()
+
 
 try:
     os.mkdir(opts.top_directory)
@@ -142,6 +142,8 @@ if opts.starting_gun_file:
 time.sleep(2)  # give everyone else a chance to see that start-file is there
 start_time = time.time()
 event_count = 0
+
+fsop.init_buf()
 
 while True:
     # if there is pause file present, do jump out of working directory
