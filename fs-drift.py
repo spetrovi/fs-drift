@@ -14,6 +14,7 @@ import common
 from common import rq, OK, NOTOK, BYTES_PER_KB
 import opts
 import errno
+import subprocess
 
 # get byte counters from fsop
 
@@ -117,6 +118,11 @@ if opts.bw:
     bw_filename = '/var/tmp/fs-drift_%d_%d_bw.csv' % (
         int(time.time()), os.getpid())
     bw_file = open(bw_filename, "w")
+
+#build lzdatagen
+if opts.compression_ratio != 0.0:
+    os.chdir(fsdrift_directory+'/lzdatagen')
+    subprocess.call('make', shell=True)
 
 os.chdir(opts.top_directory)
 sys.stdout.flush()
