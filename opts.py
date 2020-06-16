@@ -17,27 +17,29 @@ def usage(msg):
     print('-o|--operation-count')
     print('-d|--duration')
     print('-f|--max-files')
-    print('-s|--max-file-size-kb')
-    print('-r|--max-record-size-kb')
-    print('-+r|--fix-record-size-kb')
-    print('-R|--max-random-reads')
-    print('-W|--max-random-writes')
-    print('-+s|--singleIO')
-    print('-Y|--fsyncs')
-    print('-y|--fdatasyncs')
+    print('-s|--file_size')
+    print('-b|--blocksize')
+    print('-Y|--fsync')
+    print('-y|--fdatasync')
     print('-T|--response-times')
     print('-b|--bandwidth')
     print('-l|--levels')
     print('-D|--dirs-per-level')
     print('-w|--workload-table')
     print('-i|--report-interval')
-    print('-a|--abreviated-stats')
     print('-+D|--random-distribution')
     print('-+v|--mean-velocity')
     print('-+d|--gaussian-stddev')
     print('-+c|--create_stddevs-ahead')
     print('-c|--compression_ratio')
     print('-p|--pause_file')
+    print('+-d|--direct')
+    print('-P|--prefix')
+    print('-+r|--rawdevice')
+    print('-+R|--randommap')
+    print('-F|--fill')
+    print('-+D|--dedupe-percentage')
+    print('-+t|--threads')
     sys.exit(NOTOK)
 
 # command line parameter variables here
@@ -48,19 +50,15 @@ top_directory = '/tmp/foo'
 opcount = 0
 duration = 1
 max_files = 20
-max_file_size_kb = 10
-max_record_size_kb = 1
-fix_record_size_kb = 0
-max_random_reads = 2
-max_random_writes = 2
-singleIO = False
+file_size = 1024
+blocksize = 4
 fdatasync_probability_pct = 10
 fsync_probability_pct = 20
 short_stats = False
 levels = 2
 dirs_per_level = 3
-rsptimes = False
-bw = False
+rsptimes = None
+bw = None
 workload_table_filename = None
 stats_report_interval = 0
 # new parameters related to gaussian filename distribution
@@ -73,22 +71,30 @@ create_stddevs_ahead = 3.0
 drift_time = -1
 pause_file = '/var/tmp/pause'
 compression_ratio = 0.0
+direct = False
+prefix = 'f'
+rawdevice = ''
+randommap = False
+fill = False
+dedupe_percentage = 0
+threads = 1
 
-
-def parseopts():
-    global top_directory, starting_gun_file, opcount, max_files, max_file_size_kb, duration, short_stats
-    global max_record_size_kb, fix_record_size_kb, max_random_reads, max_random_writes, singleIO, rsptimes, bw
+def parseopts(argv):
+    global top_directory, starting_gun_file, opcount, max_files, file_size, duration
+    global blocksize, rsptimes, bw
     global fsync_probability_pct, fdatasync_probability_pct, workload_table_filename
     global stats_report_interval, levels, dirs_per_level
     global rand_distr_type, rand_distr_type_str, mean_index_velocity, gaussian_stddev, create_stddevs_ahead
-    global compression_ratio
-    if len(sys.argv) % 2 != 1:
+    global compression_ratio, direct, prefix, rawdevice, randommap, fill, dedupe_percentage, threads
+
+    if len(argv) % 2 != 1:
         usage('all options must have a value')
     try:
         ix = 1
-        while ix < len(sys.argv):
-            nm = sys.argv[ix]
-            val = sys.argv[ix+1]
+        while ix < len(argv):
+
+            nm = argv[ix]
+            val = argv[ix+1]
             ix += 2
             if nm == '--help' or nm == '-h':
                 usage()
@@ -104,21 +110,19 @@ def parseopts():
                 duration = int(val)
             elif nm == '--max-files' or nm == '-f':
                 max_files = int(val)
-            elif nm == '--max-file-size-kb' or nm == '-s':
-                max_file_size_kb = int(val)
-            elif nm == '--max-record-size-kb' or nm == '-r':
-                max_record_size_kb = int(val)
-            elif nm == '--fix-record-size-kb' or nm == '-+r':
-                fix_record_size_kb = int(val)
-            elif nm == '--max-random-reads' or nm == '-R':
-                max_random_reads = int(val)
-            elif nm == '--max-random-writes' or nm == '-W':
-                max_random_writes = int(val)
-            elif nm == '--singleIO' or nm == '-+s':
-                singleIO = True
-            elif nm == '--fdatasync_pct' or nm == '-y':
+            elif nm == '--file-size' or nm == '-s':
+                if ':' in val:
+                    file_size = (int(val.split(':')[0]), int(val.split(':')[1]))
+                else:
+                    file_size = int(val)
+            elif nm == '--blocksize' or nm == '-b':
+                if ':' in val:
+                    blocksize = (int(val.split(':')[0]), int(val.split(':')[1]))
+                else:
+                    blocksize = int(val)
+            elif nm == '--fdatasync' or nm == '-y':
                 fdatasync_probability_pct = int(val)
-            elif nm == '--fsync_pct' or nm == '-Y':
+            elif nm == '--fsync' or nm == '-Y':
                 fsync_probability_pct = int(val)
             elif nm == '--levels' or nm == '-l':
                 levels = int(val)
@@ -129,11 +133,9 @@ def parseopts():
             elif nm == '--report-interval' or nm == '-i':
                 stats_report_interval = int(val)
             elif nm == '--response-times' or nm == '-T':
-                v = val.lower()
-                rsptimes = (v == 'true' or v == 'yes' or v == 'on')
+                rsptimes = val
             elif nm == '--bandwidth' or nm == '-b':
-                v = val.lower()
-                bw = (v == 'true' or v == 'yes' or v == 'on')
+                bw = val
             elif nm == '--random-distribution' or nm == '-+D':
                 v = val.lower()
                 if v == 'uniform':
@@ -153,23 +155,33 @@ def parseopts():
                 compression_ratio = float(val)                
             elif nm == '--pause_file' or nm == '-p':
                 pause_file = val
+            elif nm == '--direct' or nm == '-+d':
+                direct = True
+            elif nm == '--prefix' or nm == '-P':
+                prefix = val
+            elif nm == '--rawdevice' or nm == '-+r':
+                rawdevice = val
+            elif nm == '--randommap' or nm == '-+R':
+                randommap = True
+            elif nm == '--fill' or nm == '-F':
+                fill = True
+            elif nm == '--dedupe-percentage' or nm == '-+D':
+                dedupe_percentage = int(val)
+            elif nm == '--threads' or nm == '-+t':
+                threads = int(val)
             else:
                 usage('syntax error for option %s value %s' % (nm, val))
     except Exception as e:
         usage(str(e))
     print('')
     print((
-        '%20s = top directory\n'
-        '%20s = starting gun file\n'
-        '%11s%9d = operation count\n'
-        '%11s%9d = duration\n'
-        '%11s%9d = maximum files\n'
-        '%11s%9d = maximum file size (KB)\n'
-        '%11s%9d = maximum record size (KB)\n'
-        '%11s%9d = fix record size (KB)\n'
-        '%11s%9d = maximum random reads\n'
-        '%11s%9d = maximum random writes\n'
-        '%11s%9d = single IO random operations\n'
+        '%9s = top directory\n'
+        '%9s = starting gun file\n'
+        '%20s%9d = operation count\n'
+        '%20s%9d = duration\n'
+        '%20s%9d = maximum files\n'
+        '%17s%1s = file size (KB)\n'
+        '%11s%9s = block size (KB)\n'
         '%11s%9d = fdatasync percentage\n'
         '%11s%9d = fsync percentage\n'
         '%11s%9d = directory levels\n'
@@ -181,12 +193,21 @@ def parseopts():
         '%20s = save response times\n'
         '%20s = save bandwidth\n'
         '%11s%9.1f = compression ratio\n'
-        % (top_directory, str(starting_gun_file), '', opcount, '', duration, '', max_files, '', max_file_size_kb,
-           '', max_record_size_kb, '', fix_record_size_kb, '', max_random_reads, '', max_random_writes, '', singleIO,
+        '%11s%9d = directIO\n'
+        '%20s = prefix\n'
+        '%20s = rawdevice\n'
+        '%20s = random map\n'
+        '%20s = fill device\n'
+        '%20s = dedupe_percentage\n'
+        '%20s = threads\n'
+        % (top_directory, starting_gun_file, '', opcount, '', duration, '', max_files, '', str(file_size), '', str(blocksize),
            '', fdatasync_probability_pct, '', fsync_probability_pct,
            '', levels, '', dirs_per_level,
            rand_distr_type_str, '', mean_index_velocity, '', gaussian_stddev, '', create_stddevs_ahead,
-           str(rsptimes), str(bw), '', compression_ratio)))
+           str(rsptimes), str(bw), '', compression_ratio, '', direct, prefix, rawdevice, randommap, fill, str(dedupe_percentage), str(threads))))
+
+
+         
     if workload_table_filename != None:
         print('%20s = workload table filename' % workload_table_filename)
     if stats_report_interval > 0:
@@ -197,5 +218,7 @@ def parseopts():
     sys.stdout.flush()
 
 
+
+
 if __name__ == "__main__":
-    parseopts()
+    parseopts(sys.argv)
