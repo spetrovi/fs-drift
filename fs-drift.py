@@ -1,4 +1,4 @@
-#!/usr/bin/python2
+#!/usr/bin/python3
 
 # fs-drift.py - user runs this module to generate workload
 # "-h" option generates online help
@@ -15,14 +15,17 @@ from common import rq, OK, NOTOK, BYTES_PER_KB, fsdrift_directory
 import opts
 import errno
 import subprocess
+import threading
 
 # get byte counters from fsop
 
+start_time = 0
+total_errors = 0
 
 def refresh_counters():
     global counters
     counters = {'read': fsop.read_bytes, 'create': fsop.write_bytes, 'append': fsop.write_bytes,
-                'random_write': fsop.randwrite_bytes, 'random_read': fsop.randread_bytes}
+                'random_write': fsop.randwrite_bytes, 'random_read': fsop.randread_bytes, 'random_discard': fsop.discard_bytes}
 
 # instead of looking up before deletion, do reverse, delete and catch exception
 
@@ -38,7 +41,7 @@ def ensure_deleted(file_path):
 
 
 def print_short_stats():
-    print('elapsed time: %9.1f' % (time.time() - start_time))
+    print('elapsed time: %9.1f' % (time.perf_counter() - start_time))
     print('\n'\
         '%9u = center\n' \
         '%9u = files created\t' \
@@ -52,8 +55,10 @@ def print_short_stats():
 
 
 def print_stats():
+    global start_time
+    global total_errors
     print()
-    print('elapsed time: %9.1f' % (time.time() - start_time))
+    print('elapsed time: %9.1f' % (time.perf_counter() - start_time))
     print('\n\n'\
         '%9u = center\n' \
         '%9u = files created\n' \
@@ -81,9 +86,11 @@ def print_stats():
         '%9u = fdatasync calls\n' \
         '%9u = fsync calls\n' \
         '%9u = leaf directories created\n' \
+        '%9u = discard requests\n' \
+        '%9u = discard bytes\n' \
         % (fsop.read_requests, fsop.read_bytes, fsop.randread_requests, fsop.randread_bytes,
            fsop.write_requests, fsop.write_bytes, fsop.randwrite_requests, fsop.randwrite_bytes,
-           fsop.fdatasyncs, fsop.fsyncs, fsop.dirs_created))
+           fsop.fdatasyncs, fsop.fsyncs, fsop.dirs_created, fsop.discard_requests, fsop.discard_bytes))
 
     print('%9u = no create -- file already existed\n'\
         '%9u = file not found\n'\
@@ -95,134 +102,167 @@ def print_stats():
     print('%9u = total errors' % total_errors)
     sys.stdout.flush()
 
+
+class fs_drift_instance(object):
+    def __init__(self, num):
+        self.num = num
+        self.thread = threading.Thread(target=self.run, args=())
+        self.thread.daemon = True                            # Daemonize thread
+        self.thread.start()                                  # Start the execution
+
+    def run(self):
+        if opts.rsptimes:
+            rsptime_filename = opts.rsptimes + '/fs-drift_%d_%d_%d_th_rspt.csv' % (int(time.perf_counter()), os.getpid(), self.num)
+            rsptime_file = open(rsptime_filename, "w").close()
+
+
+        if opts.bw:
+            bw_filename = opts.bw + '/fs-drift_%d_%d_%d_th_bw.csv' % (int(time.perf_counter()), os.getpid(), self.num)
+            bw_file = open(bw_filename, "w").close()
+
+
+        if opts.starting_gun_file:
+            while not os.access(opts.starting_gun_file, os.R_OK):
+                time.sleep(1)
+
+        event_count = 0
+        op = 0
+        while True:
+
+            # every 1000 events, check for "stop file" that indicates test should end
+
+            event_count += 1
+            if (event_count % 1000 == 0) and os.access(stop_file, os.R_OK):
+                break
+
+            # if using device fullness to limit test
+            if opts.fill and fsop.e_no_space:
+                    break
+                
+
+
+            # if using operation count to limit test
+
+            if opts.opcount > 0:
+                if op >= opts.opcount:
+                    break
+                op += 1
+
+            # if using duration to limit test
+
+            if opts.duration > 0:
+                elapsed = time.perf_counter() - start_time
+                if elapsed > opts.duration:
+                    break
+            x = event.gen_event()
+            (fn, name) = fsop.rq_map[x]
+            if common.verbosity & 0x1:
+                print()
+                print(x, name)
+            before_drift = time.perf_counter()
+
+            try:
+                result = fn()
+                before = result.time_before
+                total_time = result.precise_time
+                if opts.rsptimes:
+                    rsptime_file = open(rsptime_filename, "a+")
+                    rsptime_file.write('%9.9f , %9.6f , %s\n' %
+                                       (before - start_time,  total_time, result.name))
+                    rsptime_file.close()
+
+                if opts.bw:
+                    bw_file = open(bw_filename, "a+")
+                    total_size = result.size
+                    if total_size > 0:
+                        bw_file.write('%9.9f , %9.6f , %s\n' % (
+                            before - start_time,  ((total_size/BYTES_PER_KB) / total_time), result.name))
+                    bw_file.close()
+
+            except KeyboardInterrupt as e:
+                print("received SIGINT (control-C) signal, aborting...")
+                break
+            
+            if not result.success:
+                global total_errors
+                total_errors += 1
+
+            if (opts.drift_time > 0) and (before_drift - last_drift_time > opts.drift_time):
+                fsop.simulated_time += opts.drift_time
+                last_drift_time = before_drift
+
+        if opts.rsptimes:
+                rsptime_file.close()
+                print('response time file is %s' % rsptime_filename)
+
+        if opts.bw:
+                bw_file.close()
+                print('bandwidth file is %s' % bw_filename)
+
 # the main program
+def main(argv):
+    
+    opts.parseopts(argv)
+    event.parse_weights()
+    event.normalize_weights()
 
 
-opts.parseopts()
-event.parse_weights()
-event.normalize_weights()
-total_errors = 0
+
+    global total_errors
+    total_errors = 0
 
 
-try:
-    os.mkdir(opts.top_directory)
-except os.error as e:
-    if e.errno != errno.EEXIST:
-        raise e
-if opts.rsptimes:
-    rsptime_filename = '/var/tmp/fs-drift_%d_%d_rspt.csv' % (
-        int(time.time()), os.getpid())
-    rsptime_file = open(rsptime_filename, "w")
-
-if opts.bw:
-    bw_filename = '/var/tmp/fs-drift_%d_%d_bw.csv' % (
-        int(time.time()), os.getpid())
-    bw_file = open(bw_filename, "w")
-
-#build lzdatagen
-if opts.compression_ratio != 0.0:
-    os.chdir(fsdrift_directory+'/lzdatagen')
-    subprocess.call('make', shell=True)
-
-os.chdir(opts.top_directory)
-sys.stdout.flush()
-
-op = 0
-
-last_stat_time = time.time()
-last_drift_time = time.time()
-stop_file = opts.top_directory + os.sep + 'stop-file'
-
-# we have to synchronize threads across multiple hosts somehow, we do this with a
-# file in a shared file system.
-
-if opts.starting_gun_file:
-    while not os.access(opts.starting_gun_file, os.R_OK):
-        time.sleep(1)
-time.sleep(2)  # give everyone else a chance to see that start-file is there
-start_time = time.time()
-event_count = 0
-
-fsop.init_buf()
-
-while True:
-    # if there is pause file present, do jump out of working directory
-
-    if os.path.isfile(opts.pause_file):
-        if os.getcwd() != '/var/tmp':
-            os.chdir('/var/tmp')
-        continue
-    elif os.getcwd() == '/var/tmp':
-        os.chdir(opts.top_directory)
-
-    # every 1000 events, check for "stop file" that indicates test should end
-
-    event_count += 1
-    if (event_count % 1000 == 0) and os.access(stop_file, os.R_OK):
-        break
-
-    # if using operation count to limit test
-
-    if opts.opcount > 0:
-        if op >= opts.opcount:
-            break
-        op += 1
-
-    # if using duration to limit test
-
-    if opts.duration > 0:
-        elapsed = time.time() - start_time
-        if elapsed > opts.duration:
-            break
-    x = event.gen_event()
-    (fn, name) = fsop.rq_map[x]
-    if common.verbosity & 0x1:
-        print()
-        print(x, name)
-    before_drift = time.time()
-    curr_e_exists, curr_e_not_found = fsop.e_already_exists, fsop.e_file_not_found
-    refresh_counters()
-    if name in counters:
-        bytes_before = counters[name]
     try:
-        rc = fn()
-        after = fsop.time_after
-        before = fsop.time_before
-        if curr_e_exists == fsop.e_already_exists and curr_e_not_found == fsop.e_file_not_found:
-            total_time = float(after - before)
-            if opts.rsptimes:
-                rsptime_file.write('%9.3f , %9.6f , %s\n' %
-                                   (before - start_time,  total_time, name))
-            if name in counters and opts.bw:
-                refresh_counters()
-                total_size = counters[name] - bytes_before
-                bw_file.write('%9.3f , %9.6f , %s\n' % (
-                    before - start_time,  (total_size / total_time)/BYTES_PER_KB, name))
-    except KeyboardInterrupt as e:
-        print("received SIGINT (control-C) signal, aborting...")
-        break
-    if rc != OK:
-        print("%s returns %d" % (name, rc))
-        total_errors += 1
-    if (opts.stats_report_interval > 0) and (before - last_stat_time > opts.stats_report_interval):
-        if opts.short_stats == True:
-            print_short_stats()
+        os.mkdir(opts.top_directory)
+    except os.error as e:
+        if e.errno != errno.EEXIST:
+            raise e
+
+
+    sys.stdout.flush()
+
+    last_stat_time = time.perf_counter()
+    last_drift_time = time.perf_counter()
+    stop_file = opts.top_directory + os.sep + 'stop-file'
+
+    # we have to synchronize threads across multiple hosts somehow, we do this with a
+    # file in a shared file system.
+
+    if opts.randommap or opts.fill:
+        fsop.randommap()
+
+    global start_time
+    start_time = time.perf_counter()
+
+    instances = []
+    for i in range(opts.threads):
+        instances.append(fs_drift_instance(i))
+
+    if opts.starting_gun_file:
+        open(opts.starting_gun_file, 'a').close()
+
+    working = True
+    before = fsop.time_before
+    while working:
+        if (opts.stats_report_interval > 0) and (before - last_stat_time > opts.stats_report_interval):
+            if opts.short_stats == True:
+                print_short_stats()
+            else:
+                print_stats()
+
+        working = False
+        for i in instances:
+            working = i.thread.isAlive() | working
+        if working:
+            time.sleep(opts.stats_report_interval)
         else:
-            print_stats()
-        last_stat_time = before
-    if (opts.drift_time > 0) and (before_drift - last_drift_time > opts.drift_time):
-        fsop.simulated_time += opts.drift_time
-        last_drift_time = before_drift
+             break
 
-if opts.rsptimes:
-    rsptime_file.close()
-    print('response time file is %s' % rsptime_filename)
 
-if opts.bw:
-    bw_file.close()
-    print('bandwidth file is %s' % bw_filename)
+    print_stats()
+    if opts.starting_gun_file:
+        ensure_deleted(opts.starting_gun_file)
+    ensure_deleted(stop_file)
 
-print_stats()
-if opts.starting_gun_file:
-    ensure_deleted(opts.starting_gun_file)
-ensure_deleted(stop_file)
+if __name__ == "__main__":
+    main(sys.argv)
