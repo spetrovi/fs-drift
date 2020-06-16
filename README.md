@@ -43,29 +43,17 @@ Generally it's best to specify test duration in seconds instead of operation cou
 
 Set a limit on the maximum number of files that can be accessed by fs-drift.  This allows us to run tests where we use a small fraction of the filesystem's space.  To fill up a filesystem, just specify a --max-files and a mean file size such that the product is much greater than the filesystem's space.(default 20)
 
--s|--max-file-size-kb
+-s|--file-size
 
 Set a limit on maximum file size in KB.  File size is randomly generated and can be much less than this.(default 10)
 
--r|--max-record-size-kb
+-r|--blocksize
 
 Set a limit on maximum record size in KB.  Record (I/O transfer) size is randomly generated and can be much less than this.(default 1)
 
 -+r|--fix-record-size-kb
 
 Set a fix record size for random operations in KB. Record (I/O transfer) size will be this much for random operations. If set to 0, record size will be generated the same way as for other operations. (default 0)
-
--R|--max-random-reads
-
-Set a limit on how many random reads in a row are done to a file per random read op.(default 2)
-
--W|--max-random-writes
-
-Set a limit on how many random writes in a row can be done to a file per random write op.(default 2)
-
--+s|--singleIO
-
-If true, use only one IO per request on random operations. If false, use segment approach.
 
 -Y|--fsyncs
 
@@ -77,11 +65,11 @@ If true, allows fdatasync() call to be done every so often when files are writte
 
 -T|--response-times
 
-If true, save response time data to a .csv file. First value is number of seconds after start of the test. Second value is number of seconds the operation lasted. Response times for different operations are separated. (default False)
+If set, save response time data to a .csv file in the specified path. First value is number of seconds after start of the test. Second value is number of seconds the operation lasted. Response times for different operations are separated. (default None)
 
 -b|--bandwidth
 
-If true save bandwidth data to a csv file. First value is number of seconds after start of the thest. Second value is bandwidth[kB/s]. Recorded values are for sequential reads (read), random reads (randread), random writes (randwrite) and sequential writes (write). Sequential writes are agregated from append and create operations.
+If set, save bandwidth data to a csv file in the specified path. First value is number of seconds after start of the thest. Second value is bandwidth[kB/s]. Recorded values are for sequential reads (read), random reads (randread), random writes (randwrite) and sequential writes (write). Sequential writes are agregated from append and create operations. (default None)
 
 -l|--levels
 
@@ -115,9 +103,33 @@ For gaussian filename distribution, this parameter controls with width of the be
 
 This parameter is for cache tiering testing.  It allows creates to "lead" all other operations, so that we can create a high probability that read files will be in the set of "hot files".  Otherwise, most read accesses with non-uniform filename distribution will result  in "file not found" errors. (default 3.0)
 
++-d|--direct
+
+Set to work with directIO flag. (default False)
+
 -c|--compression-ratio
 
-If set, lzdatagen will be used to fill IO buffer with compressible data. Set number is a compress ratio (-r parameter in lzdatagen). E.g. 4.0 is 1/4.0, therefore 75%. For more info see lzdatagen manual. (default 0.0)
+If set, create compressible data on a 4KB granularity. The set ratio will be the portion of a block with generated data, rest will be zero (default 0.0)
+
+-+D|--dedupe-percentage
+
+If set, this portion of data will be deduplicable. (Default 0)
+
+-+r|--rawdevice
+
+Use specified path as a target for rawdevice testing. F.e. /dev/sda (default '')
+
+-+R|--randommap
+
+Precompute random map for random operations. This way, only block will be touched once. (default False)
+
+-+t|--threads
+
+Use this many threads, i.e. clones of the main instance. (default 1)
+
+-i|--iodepth
+
+Maximal allowed IO units to be served at any given point. The value is in 4KB blocks. Zero value means unmanaged. (default 0)
 
 -p|--pause
 

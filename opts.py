@@ -40,6 +40,7 @@ def usage(msg):
     print('-F|--fill')
     print('-+D|--dedupe-percentage')
     print('-+t|--threads')
+    print('-i|--iodepth')
     sys.exit(NOTOK)
 
 # command line parameter variables here
@@ -52,8 +53,8 @@ duration = 1
 max_files = 20
 file_size = 1024
 blocksize = 4
-fdatasync_probability_pct = 10
-fsync_probability_pct = 20
+fdatasync_probability_pct = 0
+fsync_probability_pct = 0
 short_stats = False
 levels = 2
 dirs_per_level = 3
@@ -70,7 +71,7 @@ gaussian_stddev = 1000.0  # just a guess, means most of accesses within 1000 fil
 create_stddevs_ahead = 3.0
 drift_time = -1
 pause_file = '/var/tmp/pause'
-compression_ratio = 0.0
+compression_ratio = 1.0
 direct = False
 prefix = 'f'
 rawdevice = ''
@@ -78,6 +79,7 @@ randommap = False
 fill = False
 dedupe_percentage = 0
 threads = 1
+iodepth = 0
 
 def parseopts(argv):
     global top_directory, starting_gun_file, opcount, max_files, file_size, duration
@@ -85,7 +87,7 @@ def parseopts(argv):
     global fsync_probability_pct, fdatasync_probability_pct, workload_table_filename
     global stats_report_interval, levels, dirs_per_level
     global rand_distr_type, rand_distr_type_str, mean_index_velocity, gaussian_stddev, create_stddevs_ahead
-    global compression_ratio, direct, prefix, rawdevice, randommap, fill, dedupe_percentage, threads
+    global compression_ratio, direct, prefix, rawdevice, randommap, fill, dedupe_percentage, threads, iodepth
 
     if len(argv) % 2 != 1:
         usage('all options must have a value')
@@ -156,19 +158,21 @@ def parseopts(argv):
             elif nm == '--pause_file' or nm == '-p':
                 pause_file = val
             elif nm == '--direct' or nm == '-+d':
-                direct = True
+                direct = int(val)
             elif nm == '--prefix' or nm == '-P':
                 prefix = val
             elif nm == '--rawdevice' or nm == '-+r':
                 rawdevice = val
             elif nm == '--randommap' or nm == '-+R':
-                randommap = True
+                randommap = int(val)
             elif nm == '--fill' or nm == '-F':
-                fill = True
+                fill = int(val)
             elif nm == '--dedupe-percentage' or nm == '-+D':
                 dedupe_percentage = int(val)
             elif nm == '--threads' or nm == '-+t':
                 threads = int(val)
+            elif nm == '--iodepth' or nm == '-i':
+                iodepth = int(val)
             else:
                 usage('syntax error for option %s value %s' % (nm, val))
     except Exception as e:
@@ -200,11 +204,12 @@ def parseopts(argv):
         '%20s = fill device\n'
         '%20s = dedupe_percentage\n'
         '%20s = threads\n'
+        '%20s = iodepth\n'
         % (top_directory, starting_gun_file, '', opcount, '', duration, '', max_files, '', str(file_size), '', str(blocksize),
            '', fdatasync_probability_pct, '', fsync_probability_pct,
            '', levels, '', dirs_per_level,
            rand_distr_type_str, '', mean_index_velocity, '', gaussian_stddev, '', create_stddevs_ahead,
-           str(rsptimes), str(bw), '', compression_ratio, '', direct, prefix, rawdevice, randommap, fill, str(dedupe_percentage), str(threads))))
+           str(rsptimes), str(bw), '', compression_ratio, '', direct, prefix, rawdevice, randommap, fill, str(dedupe_percentage), str(threads), str(iodepth))))
 
 
          
